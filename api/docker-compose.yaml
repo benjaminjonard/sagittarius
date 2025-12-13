@@ -1,0 +1,19 @@
+services:
+  sagittarius:
+    build: .
+    container_name: sagittarius
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=sqlite:///data/sagittarius.db
+      - API_SECRET=ta_super_cle_secrete_aleatoire_123456
+      - RUST_LOG=info
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
