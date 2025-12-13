@@ -8,10 +8,7 @@ use std::fs::{File, OpenOptions};
 use std::os::unix::{fs::OpenOptionsExt, io::OwnedFd};
 use std::path::Path;
 use std::time::{Duration, Instant};
-
-// Configuration de l'API
-const API_URL: &str = "http://localhost:3000/api/stats"; // Change cette URL !
-const API_SECRET: &str = "ton_secret_key_ici_123456"; // Change cette clé secrète !
+use std::env;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Stats {
@@ -41,7 +38,21 @@ impl LibinputInterface for Interface {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Charge les variables d'environnement depuis le fichier .env
+    dotenv::dotenv().ok();
+
+    // Récupère les variables d'environnement
+    let api_url = env::var("API_URL")
+        .unwrap_or_else(|_| {
+            eprintln!("⚠️  Variable API_URL non définie, utilisation de la valeur par défaut");
+            "http://localhost:3000/api/stats".to_string()
+        });
+
+    let api_secret = env::var("API_SECRET")
+        .expect("❌ Variable API_SECRET obligatoire ! Créez un fichier .env avec API_SECRET=votre_clé");
+
     println!("🔎 Initialisation de libinput...");
+    println!("📡 API URL: {}", api_url);
 
     let mut input = Libinput::new_with_udev(Interface);
     input.udev_assign_seat("seat0").map_err(|_| "Impossible d'assigner le seat")?;
@@ -116,9 +127,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("📤 Envoi des stats à l'API...");
 
                     // Envoi POST à l'API
-                    match ureq::post(API_URL)
+                    match ureq::post(&api_url)
                         .set("Content-Type", "application/json")
-                        .set("X-API-Secret", API_SECRET)
+                        .set("X-API-Secret", &api_secret)
                         .send_string(&json) {
                         Ok(response) => {
                             println!("✅ Envoyé avec succès ! Status: {}", response.status());

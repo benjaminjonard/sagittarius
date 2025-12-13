@@ -81,6 +81,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
 name = "evdev"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -455,6 +461,7 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 name = "sagittarius"
 version = "0.1.0"
 dependencies = [
+ "dotenv",
  "evdev",
  "input",
  "libc",
