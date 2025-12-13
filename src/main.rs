@@ -1,0 +1,150 @@
+use input::{Libinput, LibinputInterface};
+use input::event::keyboard::KeyboardEventTrait;
+use input::event::pointer::PointerScrollEvent;
+use evdev::Key;
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::os::unix::{fs::OpenOptionsExt, io::OwnedFd};
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+// Configuration de l'API
+const API_URL: &str = "http://localhost:3000/api/stats"; // Change cette URL !
+const API_SECRET: &str = "ton_secret_key_ici_123456"; // Change cette clé secrète !
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Stats {
+    total_keys: u64,
+    total_clicks: u64,
+    total_wheels: u64,
+
+    events: HashMap<String, u64>,
+}
+
+struct Interface;
+
+impl LibinputInterface for Interface {
+    fn open_restricted(&mut self, path: &Path, flags: i32) -> Result<OwnedFd, i32> {
+        OpenOptions::new()
+            .custom_flags(flags)
+            .read(true)
+            .write((flags & libc::O_WRONLY != 0) || (flags & libc::O_RDWR != 0))
+            .open(path)
+            .map(|file| file.into())
+            .map_err(|err| err.raw_os_error().unwrap())
+    }
+
+    fn close_restricted(&mut self, fd: OwnedFd) {
+        drop(File::from(fd));
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔎 Initialisation de libinput...");
+
+    let mut input = Libinput::new_with_udev(Interface);
+    input.udev_assign_seat("seat0").map_err(|_| "Impossible d'assigner le seat")?;
+
+    println!("✅ Libinput initialisé");
+    println!("👀 En attente d'événements...\n");
+
+    let mut stats = Stats::default();
+    let mut last_display = Instant::now();
+
+    loop {
+        input.dispatch()?;
+
+        for event in &mut input {
+            use input::event::*;
+
+            match event {
+                // Événements clavier
+                Event::Keyboard(KeyboardEvent::Key(e)) => {
+                    if e.key_state() == keyboard::KeyState::Pressed {
+                        stats.total_keys += 1;
+                        let keycode = e.key();
+
+                        // Utilise evdev pour convertir le keycode en nom
+                        let key = Key::new(keycode as u16);
+                        let key_name = format!("{:?}", key);
+
+                        *stats.events.entry(key_name).or_insert(0) += 1;
+                    }
+                }
+
+                // Événements souris - boutons
+                Event::Pointer(PointerEvent::Button(e)) => {
+                    if e.button_state() == pointer::ButtonState::Pressed {
+                        stats.total_clicks += 1;
+                        let button = e.button();
+                        let click_name = match button {
+                            0x110 => "CLICK_LEFT",
+                            0x111 => "CLICK_RIGHT",
+                            0x112 => "CLICK_MIDDLE",
+                            _ => "CLICK_OTHER",
+                        };
+                        *stats.events.entry(click_name.to_string()).or_insert(0) += 1;
+                    }
+                }
+
+                // Événements souris - scroll
+                Event::Pointer(PointerEvent::ScrollWheel(e)) => {
+                    if e.has_axis(pointer::Axis::Vertical) {
+                        let value = e.scroll_value(pointer::Axis::Vertical);
+                        let crans = (value / 15.0).abs().round() as u64;
+                        stats.total_wheels += crans;
+                        *stats.events.entry("WHEEL_VERTICAL".to_string()).or_insert(0) += crans;
+                    }
+                    if e.has_axis(pointer::Axis::Horizontal) {
+                        let value = e.scroll_value(pointer::Axis::Horizontal);
+                        let crans = (value / 15.0).abs().round() as u64;
+                        stats.total_wheels += crans;
+                        *stats.events.entry("WHEEL_HORIZONTAL".to_string()).or_insert(0) += crans;
+                    }
+                }
+
+                _ => {}
+            }
+        }
+
+        // Envoi à l'API toutes les 10 secondes
+        if last_display.elapsed() >= Duration::from_secs(10) {
+            // Sérialise en JSON
+            match serde_json::to_string(&stats) {
+                Ok(json) => {
+                    println!("📤 Envoi des stats à l'API...");
+
+                    // Envoi POST à l'API
+                    match ureq::post(API_URL)
+                        .set("Content-Type", "application/json")
+                        .set("X-API-Secret", API_SECRET)
+                        .send_string(&json) {
+                        Ok(response) => {
+                            println!("✅ Envoyé avec succès ! Status: {}", response.status());
+                            println!("   total_keys: {}, total_clicks: {}, total_wheels: {}",
+                                stats.total_keys, stats.total_clicks, stats.total_wheels);
+
+                            // Reset les compteurs UNIQUEMENT en cas de succès
+                            stats = Stats::default();
+                            println!("🔄 Compteurs réinitialisés\n");
+                        }
+                        Err(e) => {
+                            println!("❌ Erreur d'envoi: {}", e);
+                            println!("   JSON qui devait être envoyé: {}", json);
+                            println!("⚠️  Les compteurs ne sont PAS réinitialisés, réessai dans 10s\n");
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Erreur de sérialisation JSON: {}", e);
+                }
+            }
+
+            last_display = Instant::now();
+        }
+
+        // Petite pause
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
