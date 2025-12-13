@@ -9,6 +9,9 @@ use std::os::unix::{fs::OpenOptionsExt, io::OwnedFd};
 use std::path::Path;
 use std::time::{Duration, Instant};
 use std::env;
+use std::io::Write;
+
+const BACKUP_FILE: &str = "stats_backup.json";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Stats {
@@ -17,6 +20,46 @@ struct Stats {
     total_wheels: u64,
 
     events: HashMap<String, u64>,
+}
+
+// Charge les stats depuis le fichier de backup
+fn load_backup() -> Option<Stats> {
+    match std::fs::read_to_string(BACKUP_FILE) {
+        Ok(content) => {
+            match serde_json::from_str(&content) {
+                Ok(stats) => {
+                    println!("📂 Backup trouvé et chargé avec succès");
+                    Some(stats)
+                }
+                Err(e) => {
+                    eprintln!("⚠️  Erreur de lecture du backup: {}", e);
+                    None
+                }
+            }
+        }
+        Err(_) => {
+            println!("ℹ️  Aucun backup trouvé, démarrage à zéro");
+            None
+        }
+    }
+}
+
+// Sauvegarde les stats dans le fichier de backup
+fn save_backup(stats: &Stats) -> Result<(), Box<dyn std::error::Error>> {
+    let json = serde_json::to_string(stats)?;
+    let mut file = File::create(BACKUP_FILE)?;
+    file.write_all(json.as_bytes())?;
+    println!("💾 Stats sauvegardées dans {}", BACKUP_FILE);
+    Ok(())
+}
+
+// Supprime le fichier de backup
+fn delete_backup() -> Result<(), Box<dyn std::error::Error>> {
+    if Path::new(BACKUP_FILE).exists() {
+        std::fs::remove_file(BACKUP_FILE)?;
+        println!("🗑️  Backup supprimé");
+    }
+    Ok(())
 }
 
 struct Interface;
@@ -60,7 +103,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Libinput initialisé");
     println!("👀 En attente d'événements...\n");
 
-    let mut stats = Stats::default();
+    // Charge le backup si il existe
+    let mut stats = load_backup().unwrap_or_default();
+
+    if stats.total_keys > 0 || stats.total_clicks > 0 || stats.total_wheels > 0 {
+        println!("📊 Stats restaurées: {} touches, {} clics, {} scrolls\n",
+            stats.total_keys, stats.total_clicks, stats.total_wheels);
+    }
+
     let mut last_display = Instant::now();
 
     loop {
@@ -136,13 +186,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             println!("   total_keys: {}, total_clicks: {}, total_wheels: {}",
                                 stats.total_keys, stats.total_clicks, stats.total_wheels);
 
-                            // Reset les compteurs UNIQUEMENT en cas de succès
+                            // Reset les compteurs et supprime le backup en cas de succès
                             stats = Stats::default();
+                            if let Err(e) = delete_backup() {
+                                eprintln!("⚠️  Erreur lors de la suppression du backup: {}", e);
+                            }
                             println!("🔄 Compteurs réinitialisés\n");
                         }
                         Err(e) => {
                             println!("❌ Erreur d'envoi: {}", e);
                             println!("   JSON qui devait être envoyé: {}", json);
+
+                            // Sauvegarde les stats en cas d'échec
+                            if let Err(e) = save_backup(&stats) {
+                                eprintln!("❌ Erreur lors de la sauvegarde du backup: {}", e);
+                            }
+
                             println!("⚠️  Les compteurs ne sont PAS réinitialisés, réessai dans 10s\n");
                         }
                     }
