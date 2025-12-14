@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sagittarius Dashboard 🌌</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            position: relative;
+        }
+
+        h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .change-token-btn {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            backdrop-filter: blur(10px);
+            transition: background 0.3s ease;
+        }
+
+        .change-token-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-icon {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .last-sync {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow-x: auto;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        tbody tr:hover {
+            background: #e9ecef;
+        }
+
+        .type-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .type-KEY {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .type-CLICK {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .type-WHEEL {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 1.2em;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .filter-buttons {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .filter-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .filter-btn:hover {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>🌌 Sagittarius Dashboard</h1>
+        <p class="subtitle">Real-time Input Statistics</p>
+        <button id="changeTokenBtn" class="change-token-btn" onclick="changeToken()" style="display: none;">
+            🔑 Change Token
+        </button>
+    </header>
+
+    <div id="loading" class="loading">Loading data...</div>
+    <div id="error" class="error" style="display:none;"></div>
+
+    <div id="content" style="display:none;">
+        <div class="last-sync" id="lastSync"></div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">⌨️</div>
+                <div class="stat-label">Total Keys</div>
+                <div class="stat-value" id="totalKeys">0</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">🖱️</div>
+                <div class="stat-label">Total Clicks</div>
+                <div class="stat-value" id="totalClicks">0</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">🔄</div>
+                <div class="stat-label">Total Scrolls</div>
+                <div class="stat-value" id="totalWheels">0</div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <h2>📊 Detailed Events</h2>
+
+            <div class="filter-buttons">
+                <button class="filter-btn active" onclick="filterEvents('ALL', event)">All</button>
+                <button class="filter-btn" onclick="filterEvents('KEY', event)">⌨️ Keys</button>
+                <button class="filter-btn" onclick="filterEvents('CLICK', event)">🖱️ Clicks</button>
+                <button class="filter-btn" onclick="filterEvents('WHEEL', event)">🔄 Scrolls</button>
+            </div>
+
+            <table id="eventsTable">
+                <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Event</th>
+                    <th>Type</th>
+                    <th>Count</th>
+                </tr>
+                </thead>
+                <tbody id="eventsBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    let allEvents = [];
+    let currentFilter = 'ALL';
+    let apiSecret = localStorage.getItem('sagittarius_api_secret') || '';
+
+    async function fetchStats() {
+        try {
+            if (!apiSecret) {
+                apiSecret = prompt('Enter API Secret:');
+                if (!apiSecret) {
+                    throw new Error('API Secret required');
+                }
+                // Sauvegarde dans localStorage
+                localStorage.setItem('sagittarius_api_secret', apiSecret);
+            }
+
+            const response = await fetch('/api/stats', {
+                headers: {
+                    'X-API-Secret': apiSecret
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    // Token invalide, on le supprime et on redemande
+                    localStorage.removeItem('sagittarius_api_secret');
+                    apiSecret = '';
+                    throw new Error('Invalid API Secret - Please refresh the page');
+                }
+                throw new Error('API error');
+            }
+
+            const data = await response.json();
+            displayStats(data);
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+
+            // Affiche le bouton pour changer le token
+            document.getElementById('changeTokenBtn').style.display = 'block';
+        } catch (error) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = 'Error: ' + error.message;
+        }
+    }
+
+    function changeToken() {
+        const newToken = prompt('Enter new API Secret:', apiSecret);
+        if (newToken && newToken !== apiSecret) {
+            localStorage.setItem('sagittarius_api_secret', newToken);
+            apiSecret = newToken;
+            // Recharge les données avec le nouveau token
+            location.reload();
+        }
+    }
+
+    function displayStats(data) {
+        document.getElementById('totalKeys').textContent = data.total_keys.toLocaleString();
+        document.getElementById('totalClicks').textContent = data.total_clicks.toLocaleString();
+        document.getElementById('totalWheels').textContent = data.total_wheels.toLocaleString();
+
+        if (data.last_sync) {
+            const syncDate = new Date(data.last_sync);
+            const now = new Date();
+            const diffSeconds = Math.floor((now - syncDate) / 1000);
+            let syncText = `Last sync: ${syncDate.toLocaleString()}`;
+            if (diffSeconds < 60) {
+                syncText += ` (${diffSeconds}s ago)`;
+            } else if (diffSeconds < 3600) {
+                syncText += ` (${Math.floor(diffSeconds / 60)}m ago)`;
+            }
+            document.getElementById('lastSync').textContent = syncText;
+        } else {
+            document.getElementById('lastSync').textContent = 'Last sync: Never';
+        }
+
+        allEvents = data.events;
+        filterEvents(currentFilter);
+    }
+
+    function filterEvents(type, event) {
+        currentFilter = type;
+
+        // Update active button
+        if (event) {
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+
+        const filtered = type === 'ALL'
+            ? allEvents
+            : allEvents.filter(e => e.type === type);
+
+        const tbody = document.getElementById('eventsBody');
+        tbody.innerHTML = '';
+
+        filtered.forEach((event, index) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td><strong>${event.name}</strong></td>
+                    <td><span class="type-badge type-${event.type}">${event.type}</span></td>
+                    <td><strong>${event.count.toLocaleString()}</strong></td>
+                `;
+            tbody.appendChild(row);
+        });
+    }
+
+    // Fetch stats on load
+    fetchStats();
+
+    // Auto-refresh every 10 seconds
+    setInterval(fetchStats, 10000);
+</script>
+</body>
+</html>
