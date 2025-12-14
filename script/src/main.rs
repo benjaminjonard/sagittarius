@@ -94,8 +94,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_secret = env::var("API_SECRET")
         .expect("❌ Variable API_SECRET obligatoire ! Créez un fichier .env avec API_SECRET=votre_clé");
 
+    let interval_secs: u64 = env::var("INTERVAL_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+
     println!("🔎 Initialisation de libinput...");
     println!("📡 API URL: {}", api_url);
+    println!("⏱️  Intervalle d'envoi: {}s", interval_secs);
 
     let mut input = Libinput::new_with_udev(Interface);
     input.udev_assign_seat("seat0").map_err(|_| "Impossible d'assigner le seat")?;
@@ -169,8 +175,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Envoi à l'API toutes les 10 secondes
-        if last_display.elapsed() >= Duration::from_secs(10) {
+        // Envoi à l'API à l'intervalle configuré
+        if last_display.elapsed() >= Duration::from_secs(interval_secs) {
             // Sérialise en JSON
             match serde_json::to_string(&stats) {
                 Ok(json) => {
@@ -202,7 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 eprintln!("❌ Erreur lors de la sauvegarde du backup: {}", e);
                             }
 
-                            println!("⚠️  Les compteurs ne sont PAS réinitialisés, réessai dans 10s\n");
+                            println!("⚠️  Les compteurs ne sont PAS réinitialisés, réessai dans {}s\n", interval_secs);
                         }
                     }
                 }
