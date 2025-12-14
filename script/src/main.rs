@@ -13,7 +13,7 @@ use std::io::Write;
 
 const BACKUP_FILE: &str = "stats_backup.json";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 struct Stats {
     total_keys: u64,
     total_clicks: u64,
@@ -44,13 +44,16 @@ fn load_backup() -> Option<Stats> {
     }
 }
 
-// Sauvegarde les stats dans le fichier de backup
-fn save_backup(stats: &Stats) -> Result<(), Box<dyn std::error::Error>> {
-    let json = serde_json::to_string(stats)?;
-    let mut file = File::create(BACKUP_FILE)?;
-    file.write_all(json.as_bytes())?;
-    println!("💾 Stats sauvegardées dans {}", BACKUP_FILE);
-    Ok(())
+// Sauvegarde les stats dans le fichier de backup (silencieux, ne log que les erreurs)
+fn save_backup_silent(stats: &Stats) {
+    if let Err(e) = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string(stats)?;
+        let mut file = File::create(BACKUP_FILE)?;
+        file.write_all(json.as_bytes())?;
+        Ok(())
+    })() {
+        eprintln!("⚠️  Erreur de sauvegarde du backup: {}", e);
+    }
 }
 
 // Supprime le fichier de backup
@@ -118,9 +121,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut last_display = Instant::now();
+    let mut last_backup = Instant::now();
+    let backup_interval = Duration::from_secs(1); // Sauvegarde toutes les secondes
 
     loop {
         input.dispatch()?;
+
+        let mut stats_updated = false;
 
         for event in &mut input {
             use input::event::*;
@@ -137,6 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let key_name = format!("{:?}", key);
 
                         *stats.events.entry(key_name).or_insert(0) += 1;
+                        stats_updated = true;
                     }
                 }
 
@@ -146,12 +154,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         stats.total_clicks += 1;
                         let button = e.button();
                         let click_name = match button {
-                            0x110 => "CLICK_LEFT",
-                            0x111 => "CLICK_RIGHT",
-                            0x112 => "CLICK_MIDDLE",
-                            _ => "CLICK_OTHER",
+                            0x110 => "CLICK_LEFT",       // BTN_LEFT
+                            0x111 => "CLICK_RIGHT",      // BTN_RIGHT
+                            0x112 => "CLICK_MIDDLE",     // BTN_MIDDLE
+                            0x113 => "CLICK_SIDE",       // BTN_SIDE (bouton latéral avant)
+                            0x114 => "CLICK_EXTRA",      // BTN_EXTRA (bouton latéral arrière)
+                            0x115 => "CLICK_FORWARD",    // BTN_FORWARD
+                            0x116 => "CLICK_BACK",       // BTN_BACK
+                            0x117 => "CLICK_TASK",       // BTN_TASK
+                            _ => {
+                                // Pour les boutons inconnus, on utilise le code hexadécimal
+                                &format!("CLICK_0x{:X}", button)
+                            }
                         };
                         *stats.events.entry(click_name.to_string()).or_insert(0) += 1;
+                        stats_updated = true;
                     }
                 }
 
@@ -160,19 +177,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if e.has_axis(pointer::Axis::Vertical) {
                         let value = e.scroll_value(pointer::Axis::Vertical);
                         let crans = (value / 15.0).abs().round() as u64;
-                        stats.total_wheels += crans;
-                        *stats.events.entry("WHEEL_VERTICAL".to_string()).or_insert(0) += crans;
+                        if crans > 0 {
+                            stats.total_wheels += crans;
+                            *stats.events.entry("WHEEL_VERTICAL".to_string()).or_insert(0) += crans;
+                            stats_updated = true;
+                        }
                     }
                     if e.has_axis(pointer::Axis::Horizontal) {
                         let value = e.scroll_value(pointer::Axis::Horizontal);
                         let crans = (value / 15.0).abs().round() as u64;
-                        stats.total_wheels += crans;
-                        *stats.events.entry("WHEEL_HORIZONTAL".to_string()).or_insert(0) += crans;
+                        if crans > 0 {
+                            stats.total_wheels += crans;
+                            *stats.events.entry("WHEEL_HORIZONTAL".to_string()).or_insert(0) += crans;
+                            stats_updated = true;
+                        }
                     }
                 }
 
                 _ => {}
             }
+        }
+
+        // Sauvegarde périodique (toutes les secondes si stats mises à jour)
+        if stats_updated && last_backup.elapsed() >= backup_interval {
+            save_backup_silent(&stats);
+            last_backup = Instant::now();
         }
 
         // Envoi à l'API à l'intervalle configuré
@@ -201,14 +230,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Err(e) => {
                             println!("❌ Erreur d'envoi: {}", e);
-                            println!("   JSON qui devait être envoyé: {}", json);
-
-                            // Sauvegarde les stats en cas d'échec
-                            if let Err(e) = save_backup(&stats) {
-                                eprintln!("❌ Erreur lors de la sauvegarde du backup: {}", e);
-                            }
-
                             println!("⚠️  Les compteurs ne sont PAS réinitialisés, réessai dans {}s\n", interval_secs);
+                            // Pas besoin de sauvegarder ici, c'est déjà fait en continu
                         }
                     }
                 }

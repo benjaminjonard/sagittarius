@@ -1,3 +1,5 @@
+use actix_cors::Cors;
+use actix_web::http::header;
 use actix_web::{web, App, HttpServer, HttpRequest, HttpResponse, middleware};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions, Row};
@@ -228,8 +230,18 @@ async fn main() -> std::io::Result<()> {
     println!("   GET  /health     - Health check");
 
     HttpServer::new(move || {
+        let frontend_origin = env::var("CORS_ALLOW_ORIGIN")
+            .unwrap_or_else(|_| "*".to_string()); // fallback to "*" if not set
+
+        let cors = Cors::default()
+            .allowed_origin(&frontend_origin)
+            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+            .allowed_headers(vec![header::CONTENT_TYPE, header::HeaderName::from_static("x-api-secret")])
+            .max_age(3600);
+
         App::new()
             .app_data(web::Data::new(app_state.clone()))
+            .wrap(cors)
             .wrap(middleware::Logger::default())
             .route("/health", web::get().to(health))
             .route("/api/stats", web::post().to(receive_stats))
