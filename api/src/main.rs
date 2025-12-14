@@ -1,5 +1,3 @@
-use actix_cors::Cors;
-use actix_web::http::header;
 use actix_web::{web, App, HttpServer, HttpRequest, HttpResponse, middleware};
 use serde::{Deserialize, Serialize};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions, Row};
@@ -12,8 +10,6 @@ struct Stats {
     total_clicks: i64,
     total_wheels: i64,
     events: HashMap<String, i64>,
-    timestamp: Option<String>,
-    hostname: Option<String>,
 }
 
 #[derive(Clone)]
@@ -59,7 +55,7 @@ async fn receive_stats(
     // Upsert chaque événement (INSERT ou UPDATE si existe)
     for (event_name, count) in &stats.events {
         let event_type = get_event_type(event_name);
-        
+
         sqlx::query(
             r#"
             INSERT INTO events (event_name, event_type, count)
@@ -77,17 +73,31 @@ async fn receive_stats(
         .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
     }
 
+    // Met à jour la date du dernier envoi
+    sqlx::query(
+        r#"
+        INSERT INTO metadata (key, value, updated_at)
+        VALUES ('last_sync', datetime('now'), datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET
+            value = datetime('now'),
+            updated_at = datetime('now')
+        "#
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+
     // Commit la transaction
     tx.commit().await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
 
-    println!("✅ Stats mises à jour: {} touches, {} clics, {} scrolls ({} événements)", 
-        stats.total_keys, 
-        stats.total_clicks, 
+    println!("✅ Stats mises à jour: {} touches, {} clics, {} scrolls ({} événements)",
+        stats.total_keys,
+        stats.total_clicks,
         stats.total_wheels,
         stats.events.len()
     );
-    
+
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,
         "message": "Stats updated successfully",
@@ -155,10 +165,22 @@ async fn get_stats(
         }));
     }
 
+    // Récupère la date du dernier envoi
+    let last_sync = sqlx::query(
+        r#"
+        SELECT value FROM metadata WHERE key = 'last_sync'
+        "#
+    )
+    .fetch_optional(&data.db)
+    .await
+    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?
+    .and_then(|row| row.get::<Option<String>, _>("value"));
+
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "total_keys": total_keys,
         "total_clicks": total_clicks,
         "total_wheels": total_wheels,
+        "last_sync": last_sync,
         "events": events
     })))
 }
@@ -171,10 +193,10 @@ async fn main() -> std::io::Result<()> {
 
     let database_url = env::var("DATABASE_URL")
         .unwrap_or_else(|_| "sqlite://sagittarius.db".to_string());
-    
+
     let api_secret = env::var("API_SECRET")
         .expect("API_SECRET must be set");
-    
+
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT").unwrap_or_else(|_| "3000".to_string());
 
@@ -205,6 +227,20 @@ async fn main() -> std::io::Result<()> {
     .await
     .expect("Failed to create events table");
 
+    // Crée la table metadata pour stocker la dernière date d'envoi
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        "#
+    )
+    .execute(&pool)
+    .await
+    .expect("Failed to create metadata table");
+
     // Crée les index pour les performances
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)")
         .execute(&pool)
@@ -230,18 +266,8 @@ async fn main() -> std::io::Result<()> {
     println!("   GET  /health     - Health check");
 
     HttpServer::new(move || {
-        let frontend_origin = env::var("CORS_ALLOW_ORIGIN")
-            .unwrap_or_else(|_| "*".to_string()); // fallback to "*" if not set
-
-        let cors = Cors::default()
-            .allowed_origin(&frontend_origin)
-            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
-            .allowed_headers(vec![header::CONTENT_TYPE, header::HeaderName::from_static("x-api-secret")])
-            .max_age(3600);
-
         App::new()
             .app_data(web::Data::new(app_state.clone()))
-            .wrap(cors)
             .wrap(middleware::Logger::default())
             .route("/health", web::get().to(health))
             .route("/api/stats", web::post().to(receive_stats))
