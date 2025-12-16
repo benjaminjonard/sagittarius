@@ -103,9 +103,19 @@
             color: white;
             padding: 15px;
             border-radius: 8px;
-            text-align: center;
             margin-bottom: 20px;
             backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .sync-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .table-container {
@@ -224,7 +234,16 @@
     <div id="error" class="error" style="display:none;"></div>
 
     <div id="content" style="display:none;">
-        <div class="last-sync" id="lastSync"></div>
+        <div class="last-sync">
+            <div class="sync-info">
+                <span>⏱️</span>
+                <span id="lastSync">Last sync: Never</span>
+            </div>
+            <div class="sync-info">
+                <span>📅</span>
+                <span id="collectionStart">Collecting since: -</span>
+            </div>
+        </div>
 
         <div class="stats-grid">
             <div class="stat-card">
@@ -335,6 +354,7 @@
         document.getElementById('totalClicks').textContent = data.total_clicks.toLocaleString();
         document.getElementById('totalWheels').textContent = data.total_wheels.toLocaleString();
 
+        // Last sync
         if (data.last_sync) {
             const syncDate = new Date(data.last_sync);
             const now = new Date();
@@ -348,6 +368,24 @@
             document.getElementById('lastSync').textContent = syncText;
         } else {
             document.getElementById('lastSync').textContent = 'Last sync: Never';
+        }
+
+        // Collection start
+        if (data.first_sync) {
+            const startDate = new Date(data.first_sync);
+            const now = new Date();
+            const diffDays = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
+            let startText = `Collecting since: ${startDate.toLocaleDateString()}`;
+            if (diffDays === 0) {
+                startText += ' (today)';
+            } else if (diffDays === 1) {
+                startText += ' (1 day)';
+            } else {
+                startText += ` (${diffDays} days)`;
+            }
+            document.getElementById('collectionStart').textContent = startText;
+        } else {
+            document.getElementById('collectionStart').textContent = 'Collecting since: -';
         }
 
         allEvents = data.events;

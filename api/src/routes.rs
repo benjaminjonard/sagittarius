@@ -74,6 +74,17 @@ pub async fn receive_stats(
     .await
     .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
 
+    // Initialise la date de début si c'est le premier envoi
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO metadata (key, value, updated_at)
+        VALUES ('first_sync', datetime('now'), datetime('now'))
+        "#
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+
     // Commit la transaction
     tx.commit().await
         .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
@@ -155,11 +166,23 @@ pub async fn get_stats(
     .map_err(|e| actix_web::error::ErrorInternalServerError(e))?
     .and_then(|row| row.get::<Option<String>, _>("value"));
 
+    // Récupère la date de début de collecte
+    let first_sync = sqlx::query(
+        r#"
+        SELECT value FROM metadata WHERE key = 'first_sync'
+        "#
+    )
+    .fetch_optional(&data.db)
+    .await
+    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?
+    .and_then(|row| row.get::<Option<String>, _>("value"));
+
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "total_keys": total_keys,
         "total_clicks": total_clicks,
         "total_wheels": total_wheels,
         "last_sync": last_sync,
+        "first_sync": first_sync,
         "events": events
     })))
 }
